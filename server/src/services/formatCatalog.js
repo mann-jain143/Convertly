@@ -1,0 +1,32 @@
+export const FORMAT_CATALOG = {
+  txt: ['docx', 'md', 'html', 'pdf', 'rtf', 'odt'],
+  md: ['txt', 'docx', 'html', 'pdf', 'rtf', 'odt'],
+  html: ['txt', 'docx', 'md', 'pdf', 'rtf', 'odt'],
+  rtf: ['txt', 'docx', 'pdf', 'odt', 'html'],
+  odt: ['txt', 'docx', 'pdf', 'html', 'rtf'],
+  doc: ['pdf', 'docx', 'odt', 'txt'],
+  docx: ['pdf', 'txt', 'md', 'html', 'rtf', 'odt'],
+  pdf: ['docx', 'txt', 'html'],
+  csv: ['xlsx', 'pdf', 'txt'],
+  xlsx: ['csv', 'pdf', 'ods'],
+  ods: ['xlsx', 'pdf', 'csv'],
+  pptx: ['pdf', 'odp'],
+  odp: ['pdf', 'pptx'],
+  jpg: ['png', 'webp', 'jpeg', 'tiff', 'avif'],
+  jpeg: ['png', 'webp', 'jpg', 'tiff', 'avif'],
+  png: ['jpg', 'jpeg', 'webp', 'tiff', 'avif'],
+  webp: ['jpg', 'jpeg', 'png', 'tiff', 'avif'],
+  tiff: ['jpg', 'jpeg', 'png', 'webp', 'avif'],
+  avif: ['jpg', 'jpeg', 'png', 'webp'],
+  mp4: ['mp3', 'avi', 'mov', 'wav', 'mkv'],
+  mov: ['mp4', 'mp3', 'avi', 'wav'],
+  avi: ['mp4', 'mp3', 'mov', 'wav'],
+  mkv: ['mp4', 'mp3', 'avi'],
+  mp3: ['wav', 'aac', 'ogg', 'flac', 'mp4'],
+  wav: ['mp3', 'aac', 'ogg', 'flac', 'mp4'],
+  aac: ['mp3', 'wav', 'ogg', 'flac'],
+  ogg: ['mp3', 'wav', 'aac', 'flac'],
+  flac: ['mp3', 'wav', 'ogg', 'aac']
+};
+
+export const TOTAL_FORMATS = Object.keys(FORMAT_CATALOG).length;
