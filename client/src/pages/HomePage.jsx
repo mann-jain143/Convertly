@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Header from '../components/Header';
 import FileUpload from '../components/FileUpload';
@@ -18,15 +19,31 @@ const trustItems = [
   '⚡ Instant automated processing',
 ];
 
+const mimeToExt = {
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+  'text/html': 'html',
+  'application/pdf': 'pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/msword': 'doc',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'video/mp4': 'mp4',
+  'audio/mpeg': 'mp3',
+};
+
 export default function HomePage() {
   const { t, i18n } = useTranslation();
   const [file, setFile] = useState(null);
+  const [catalog, setCatalog] = useState({});
   const [formats, setFormats] = useState([]);
   const [selectedFormat, setSelectedFormat] = useState('');
   const [status, setStatus] = useState('idle');
   const [progress, setProgress] = useState(0);
   const [downloadUrl, setDownloadUrl] = useState('');
   const [error, setError] = useState('');
+  const [bootWarnings, setBootWarnings] = useState([]);
 
   const resultName = useMemo(() => {
     if (!file || !selectedFormat) return '';
@@ -34,34 +51,53 @@ export default function HomePage() {
     return `${base}.${selectedFormat}`;
   }, [file, selectedFormat]);
 
-  const fetchFormats = async (selectedFile) => {
-    const ext = getExtension(selectedFile.name);
-    const res = await fetch(`${API_URL}/api/formats/${ext}`);
-    if (!res.ok) throw new Error('Unsupported file type.');
-    const data = await res.json();
-    setFormats(data.formats);
-    setSelectedFormat(data.formats[0] || '');
+  useEffect(() => {
+    const loadFormats = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/formats`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to load format catalog');
+        setCatalog(data.formats || {});
+        setBootWarnings(data.warnings || []);
+      } catch (err) {
+        toast.error(err.message);
+      }
+    };
+
+    loadFormats();
+  }, []);
+
+  const detectExt = (incomingFile) => {
+    const fromName = getExtension(incomingFile.name);
+    return fromName || mimeToExt[incomingFile.type] || '';
   };
 
-  const onFileSelect = async (incomingFile) => {
+  const onFileSelect = (incomingFile) => {
     if (incomingFile.size > 100 * 1024 * 1024) {
       toast.error('File exceeds 100MB limit');
       return;
     }
+
     setFile(incomingFile);
     setDownloadUrl('');
     setStatus('idle');
     setError('');
-    try {
-      await fetchFormats(incomingFile);
-      toast.success('File type detected.');
-    } catch (err) {
+
+    const detected = detectExt(incomingFile);
+    const supported = catalog[detected] || [];
+
+    if (!supported.length) {
       setFormats([]);
       setSelectedFormat('');
-      setError(err.message);
       setStatus('error');
-      toast.error(err.message);
+      setError(`Unsupported input type: ${detected || 'unknown'}`);
+      toast.error('Unsupported input type');
+      return;
     }
+
+    setFormats(supported);
+    setSelectedFormat(supported[0]);
+    toast.success(`Detected ${detected.toUpperCase()} file.`);
   };
 
   const convert = async () => {
@@ -74,8 +110,8 @@ export default function HomePage() {
     setProgress(10);
 
     const timer = setInterval(() => {
-      setProgress((p) => (p >= 90 ? p : p + 10));
-    }, 250);
+      setProgress((p) => (p >= 90 ? p : p + 8));
+    }, 220);
 
     try {
       const res = await fetch(`${API_URL}/api/convert`, { method: 'POST', body: formData });
@@ -125,9 +161,10 @@ export default function HomePage() {
               whileTap={{ scale: 0.98 }}
               onClick={convert}
               disabled={!file || !selectedFormat || status === 'loading'}
-              className="mt-4 w-full rounded-2xl bg-gradient-to-r from-brand-600 to-cyan-500 px-6 py-3 font-semibold text-white disabled:opacity-60"
+              className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-brand-600 to-cyan-500 px-6 py-3 font-semibold text-white disabled:opacity-60"
             >
-              Convert Now
+              {status === 'loading' && <Loader2 className="h-4 w-4 animate-spin" />}
+              {status === 'loading' ? 'Converting...' : 'Convert Now'}
             </motion.button>
             <DownloadButton downloadUrl={downloadUrl} fileName={resultName} />
           </div>
@@ -141,12 +178,26 @@ export default function HomePage() {
                 ))}
               </ul>
             </div>
+
+            <div className="glass rounded-3xl p-6 shadow-soft">
+              <h3 className="text-lg font-semibold">Engine health checks</h3>
+              {bootWarnings.length ? (
+                <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-amber-500">
+                  {bootWarnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm text-emerald-500">All conversion engines are available.</p>
+              )}
+            </div>
+
             <div className="glass rounded-3xl p-6 shadow-soft">
               <h3 className="text-lg font-semibold">Why teams choose Convertly</h3>
               <div className="mt-3 grid gap-3 text-sm text-slate-600 dark:text-slate-300">
-                <p>• Universal conversion engine powered by LibreOffice, FFmpeg, Sharp, and Pandoc.</p>
+                <p>• CloudConvert-level universal conversion with dynamic backend format catalog.</p>
+                <p>• Automatic engine routing + Pandoc → LibreOffice fallback for document reliability.</p>
                 <p>• Auto-cleanup worker removes files after download or 5 minutes.</p>
-                <p>• Modern UX with upload progress, smart format suggestions, and polished animations.</p>
               </div>
             </div>
           </div>

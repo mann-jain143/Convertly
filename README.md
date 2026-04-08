@@ -1,28 +1,24 @@
 # Convertly — Universal Secure File Converter SaaS
 
-Convertly is a production-ready SaaS web application for fast and secure file conversion across documents, images, audio, and video.
+Convertly is a production-ready SaaS web application for secure multi-engine file conversion across documents, images, audio, and video.
 
 ## Features
 
-- Universal upload (PDF, DOCX, PPTX, XLSX, JPG, PNG, WEBP, MP4, MOV, MP3, WAV, TXT, MD)
-- Dynamic output format detection
-- Instant conversion pipeline
-- Download-ready response stream
-- 100MB file size limit
-- Auto-cleanup after download and scheduled 5-minute retention purge
-- Trust-first UX messaging and legal pages
-- Dark mode + responsive premium landing page
-- i18n (English + Spanish)
-- Dockerized backend with LibreOffice + FFmpeg + Pandoc
+- Universal upload and conversion with **28 supported input formats**
+- Dynamic backend-driven format catalog (`GET /api/formats`)
+- Unified conversion endpoint (`POST /api/convert`) with automatic engine routing
+- Engine fallback strategy for docs: **Pandoc → LibreOffice fallback**
+- 100MB upload limit and meaningful API errors
+- Tool health checks for `pandoc`, `soffice`, `ffmpeg`
+- Temporary storage with auto-delete after stream close and 5-minute scheduled cleanup
+- Modern SaaS frontend with drag/drop, animated progress, dark mode, trust UI, legal pages, and i18n
 
 ## Project Structure
 
 ```bash
 .
 ├── client/                 # React + Vite + Tailwind + Framer Motion
-│   └── src/components/     # Upload and conversion UI components
-├── server/                 # Express conversion API
-│   └── src/services/       # Conversion + cleanup services
+├── server/                 # Express API + conversion services
 ├── docker/                 # Dockerfiles + compose
 └── README.md
 ```
@@ -33,11 +29,15 @@ Convertly is a production-ready SaaS web application for fast and secure file co
 
 ```bash
 npm install
-npm install --workspace client
-npm install --workspace server
 ```
 
-### 2) Run development servers
+### 2) Configure environment
+
+```bash
+cp server/.env.example server/.env
+```
+
+### 3) Run app
 
 ```bash
 npm run dev
@@ -46,24 +46,14 @@ npm run dev
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:8080`
 
-### 3) Environment variables
-
-Copy and edit:
-
-```bash
-cp server/.env.example server/.env
-```
-
-Supported variables:
-
-- `PORT` (default `8080`)
-- `CLIENT_URL` (default `http://localhost:5173`)
-- `MAX_FILE_SIZE_MB` (default `100`)
-
 ## API
 
-### `GET /api/formats/:sourceExt`
-Returns supported output formats for an input extension.
+### `GET /api/formats`
+Returns:
+- `formats`: source → target mapping
+- `tools`: installed state for conversion binaries
+- `warnings`: missing tool warnings
+- `totalFormats`
 
 ### `POST /api/convert`
 Multipart form-data fields:
@@ -74,41 +64,27 @@ Response: streamed converted file with download headers.
 
 ## Conversion Engines
 
-- **LibreOffice** for Office → PDF
-- **FFmpeg** for audio/video
-- **Sharp** for image conversion
-- **Pandoc** for text/document formats
+- **Pandoc**: `txt ↔ docx ↔ md ↔ html ↔ pdf` and related text formats
+- **LibreOffice (soffice)**: `pdf ↔ docx`, `doc/docx → pdf`, and Office-family conversions
+- **Sharp**: image conversions (`jpg/png/webp/tiff/avif`)
+- **FFmpeg**: media conversions (`mp4/mp3/avi/wav/...`)
 
-## Auto Cleanup Strategy
-
-- Output file deleted immediately after download stream closes.
-- Scheduled cleanup removes any upload/output file older than 5 minutes every minute.
-
-## Deployment
-
-### Docker
+## Docker Deployment
 
 ```bash
 cd docker
 docker compose up --build
 ```
 
-### Vercel (Frontend)
+## Cloud Deployment
 
+### Frontend (Vercel)
 - Root directory: `client`
 - Build command: `npm run build`
 - Output directory: `dist`
-- Env variable: `VITE_API_URL=https://<your-api-domain>`
+- Env: `VITE_API_URL=https://<api-domain>`
 
-### Render / Railway (Backend)
-
+### Backend (Render/Railway)
 - Root directory: `server`
-- Install: `npm install`
-- Start: `npm start`
-- Add apt packages or Docker deploy for `ffmpeg libreoffice pandoc`
-
-## Production Notes
-
-- Enable HTTPS and WAF in production.
-- Add rate-limiting and auth for paid plans.
-- Integrate object storage for scalable enterprise workflows if retention policies change.
+- Start command: `npm start`
+- Requires binaries: `ffmpeg`, `pandoc`, `libreoffice` (or deploy via Docker)
