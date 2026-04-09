@@ -7,17 +7,11 @@ import { scheduleCleanup } from '../services/cleanupService.js';
 import { ext, removeFileSafe } from '../utils/fileUtils.js';
 import { getToolStatus } from '../services/systemCheckService.js';
 import { logger } from '../services/logger.js';
-import { deleteOutput, deleteUpload, getOutput, getUpload, saveOutput, saveUpload } from '../services/storageService.js';
-import { enqueueJob, waitForJob } from '../services/queueService.js';
 
 function detectInputType(file) {
-  const extension = ext(file.path || file.originalName || file.originalname || '');
-  const mimeBased = mime.extension(file.mimeType || file.mimetype || '') || extension;
+  const extension = ext(file.path || file.originalname || '');
+  const mimeBased = mime.extension(file.mimetype || '') || extension;
   return (mimeBased || extension || '').toLowerCase();
-}
-
-function getFormatOptions(sourceExt) {
-  return FORMAT_CATALOG[sourceExt] || [];
 }
 
 export async function getFormats(_req, res) {
@@ -27,116 +21,67 @@ export async function getFormats(_req, res) {
   if (!tools.libreoffice) warnings.push('LibreOffice (soffice) is not installed. PDF/Office conversions may fail.');
   if (!tools.ffmpeg) warnings.push('FFmpeg is not installed. Audio/video conversions may fail.');
 
-  return res.json({ totalFormats: TOTAL_FORMATS, formats: FORMAT_CATALOG, tools, warnings });
-}
-
-export function uploadFiles(req, res) {
-  const files = req.files || [];
-  if (!files.length) return res.status(400).json({ error: 'At least one file is required.' });
-
-  const payload = files.map((file) => {
-    const saved = saveUpload(file);
-    const sourceExt = detectInputType(saved);
-    return {
-      id: saved.id,
-      originalName: saved.originalName,
-      size: saved.size,
-      sourceExt,
-      availableFormats: getFormatOptions(sourceExt),
-    };
+  return res.json({
+    totalFormats: TOTAL_FORMATS,
+    formats: FORMAT_CATALOG,
+    tools,
+    warnings,
   });
-
-  return res.status(201).json({ files: payload });
 }
 
 export async function convert(req, res) {
-  const { items = [], globalTargetFormat = '' } = req.body;
-  if (!Array.isArray(items) || !items.length) return res.status(400).json({ error: 'items[] is required.' });
+  const inputPath = req.file?.path;
+  const targetFormat = req.body.targetFormat?.toLowerCase();
 
-  const queueJob = enqueueJob(async () => {
-    const results = [];
+  if (!inputPath || !targetFormat) {
+    return res.status(400).json({ error: 'File and targetFormat are required.' });
+  }
 
-    for (const item of items) {
-      const uploaded = getUpload(item.fileId);
-      if (!uploaded) {
-        results.push({ fileId: item.fileId, status: 'failed', error: 'Uploaded file not found or expired.' });
-        continue;
-      }
+  const sourceExt = detectInputType(req.file);
+  const available = FORMAT_CATALOG[sourceExt] || [];
 
-      const sourceExt = detectInputType(uploaded);
-      const targetFormat = (item.targetFormat || globalTargetFormat || '').toLowerCase();
-      const available = getFormatOptions(sourceExt);
+  if (!available.length) {
+    removeFileSafe(inputPath);
+    return res.status(400).json({ error: `Unsupported source format: ${sourceExt}.` });
+  }
 
-      if (!targetFormat || !available.includes(targetFormat)) {
-        results.push({
-          fileId: item.fileId,
-          originalName: uploaded.originalName,
-          status: 'failed',
-          error: `Conversion from ${sourceExt} to ${targetFormat || 'unknown'} is not supported.`,
-        });
-        continue;
-      }
-
-      try {
-        const outputPath = await convertFile(uploaded.path, targetFormat);
-        removeFileSafe(uploaded.path);
-        deleteUpload(uploaded.id);
-
-        const baseName = path.basename(uploaded.originalName, path.extname(uploaded.originalName));
-        const downloadName = `${baseName}.${targetFormat}`;
-        const savedOutput = saveOutput({
-          path: outputPath,
-          downloadName,
-          mimeType: mime.lookup(outputPath) || 'application/octet-stream',
-        });
-
-        scheduleCleanup(outputPath);
-
-        results.push({
-          fileId: item.fileId,
-          originalName: uploaded.originalName,
-          sourceExt,
-          targetFormat,
-          status: 'completed',
-          estimatedSeconds: Math.max(2, Math.round(uploaded.size / (1024 * 1024))),
-          downloadUrl: `/api/download/${savedOutput.id}`,
-        });
-      } catch (error) {
-        logger.error('Batch conversion item failed', { fileId: item.fileId, error: error.message });
-        const msg = /not found|ENOENT|is not recognized/i.test(error.message)
-          ? 'Required conversion tool is missing on server.'
-          : error.message || 'Conversion failed.';
-        results.push({ fileId: item.fileId, originalName: uploaded.originalName, status: 'failed', error: msg });
-      }
-    }
-
-    return results;
-  });
+  if (!available.includes(targetFormat)) {
+    removeFileSafe(inputPath);
+    return res.status(400).json({ error: `Conversion from ${sourceExt} to ${targetFormat} is not supported.` });
+  }
 
   try {
-    const done = await waitForJob(queueJob.id);
-    const successCount = done.results.filter((r) => r.status === 'completed').length;
-    return res.json({ jobId: queueJob.id, status: done.status, successCount, results: done.results });
+    logger.info('API conversion request', {
+      sourceExt,
+      targetFormat,
+      originalName: req.file.originalname,
+      size: req.file.size,
+    });
+
+    const outputPath = await convertFile(inputPath, targetFormat);
+    removeFileSafe(inputPath);
+    scheduleCleanup(outputPath);
+
+    const baseName = path.basename(req.file.originalname, path.extname(req.file.originalname));
+    const downloadName = `${baseName}.${targetFormat}`;
+    res.setHeader('Content-Type', mime.lookup(outputPath) || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
+
+    const stream = fs.createReadStream(outputPath);
+    stream.pipe(res);
+    stream.on('close', () => removeFileSafe(outputPath));
   } catch (error) {
-    return res.status(500).json({ error: error.message || 'Batch conversion failed.' });
+    logger.error('Conversion failure', {
+      error: error.message,
+      sourceExt,
+      targetFormat,
+    });
+
+    removeFileSafe(inputPath);
+    const msg = /not found|ENOENT|is not recognized/i.test(error.message)
+      ? 'Required conversion tool is missing on server.'
+      : error.message || 'Conversion failed.';
+
+    return res.status(500).json({ error: msg });
   }
-}
-
-export function download(req, res) {
-  const output = getOutput(req.params.outputId);
-  if (!output) return res.status(404).json({ error: 'Converted file not found or expired.' });
-
-  if (!fs.existsSync(output.path)) {
-    deleteOutput(output.id);
-    return res.status(404).json({ error: 'Converted file not found on disk.' });
-  }
-
-  res.setHeader('Content-Type', output.mimeType);
-  res.setHeader('Content-Disposition', `attachment; filename="${output.downloadName}"`);
-  const stream = fs.createReadStream(output.path);
-  stream.pipe(res);
-  stream.on('close', () => {
-    removeFileSafe(output.path);
-    deleteOutput(output.id);
-  });
 }

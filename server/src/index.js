@@ -6,7 +6,6 @@ import { CLIENT_URL, OUTPUT_DIR, PORT, UPLOAD_DIR } from './config.js';
 import { ensureDir } from './utils/fileUtils.js';
 import { startCleanupCron } from './services/cleanupService.js';
 import { logger } from './services/logger.js';
-import { getToolStatus } from './services/systemCheckService.js';
 
 dotenv.config();
 
@@ -16,17 +15,13 @@ startCleanupCron();
 
 const app = express();
 app.use(cors({ origin: CLIENT_URL }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json());
 app.use((req, _res, next) => {
   logger.info('Incoming request', { method: req.method, path: req.path });
   next();
 });
 
-app.get('/api/health', async (_req, res) => {
-  const tools = await getToolStatus();
-  res.json({ ok: true, service: 'convertly-api', tools });
-});
-
+app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'convertly-api' }));
 app.use('/api', convertRoutes);
 
 app.use((err, _req, res, _next) => {

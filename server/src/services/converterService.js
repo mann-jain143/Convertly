@@ -8,9 +8,9 @@ import { OUTPUT_DIR } from '../config.js';
 import { ext } from '../utils/fileUtils.js';
 import { logger } from './logger.js';
 
-const imageFormats = ['jpg', 'jpeg', 'png', 'webp', 'svg'];
-const mediaFormats = ['mp4', 'mov', 'avi', 'mkv', 'mp3', 'wav', 'aac'];
-const libreOfficeFormats = ['pdf', 'docx', 'odt', 'txt', 'html'];
+const imageFormats = ['jpg', 'jpeg', 'png', 'webp', 'tiff', 'avif'];
+const mediaFormats = ['mp4', 'mov', 'avi', 'mkv', 'mp3', 'wav', 'aac', 'ogg', 'flac'];
+const libreOfficeFormats = ['pdf', 'doc', 'docx', 'pptx', 'odp', 'xlsx', 'ods', 'csv', 'odt', 'rtf', 'txt', 'html'];
 
 function runCommand(cmd, args) {
   return new Promise((resolve, reject) => {
@@ -25,22 +25,7 @@ function runCommand(cmd, args) {
   });
 }
 
-async function rasterToSvgWrapper(inputPath, outPath) {
-  const image = sharp(inputPath);
-  const metadata = await image.metadata();
-  const pngBuffer = await image.png().toBuffer();
-  const base64 = pngBuffer.toString('base64');
-  const width = metadata.width || 1000;
-  const height = metadata.height || 1000;
-  const svg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">\n  <image href="data:image/png;base64,${base64}" width="${width}" height="${height}"/>\n</svg>`;
-  await fs.promises.writeFile(outPath, svg, 'utf8');
-}
-
 async function convertImage(inputPath, targetFormat, outPath) {
-  if (targetFormat === 'svg') {
-    await rasterToSvgWrapper(inputPath, outPath);
-    return;
-  }
   const normalized = targetFormat === 'jpg' ? 'jpeg' : targetFormat;
   await sharp(inputPath).toFormat(normalized).toFile(outPath);
 }
@@ -67,7 +52,7 @@ async function convertWithLibreOffice(inputPath, targetFormat, outPath) {
 }
 
 function isPandocDocFormat(inputExt, targetFormat) {
-  const textFormats = ['txt', 'md', 'docx', 'html', 'odt', 'pdf'];
+  const textFormats = ['txt', 'md', 'docx', 'html', 'rtf', 'odt', 'pdf'];
   return textFormats.includes(inputExt) && textFormats.includes(targetFormat);
 }
 
@@ -81,7 +66,9 @@ export async function convertFile(inputPath, targetFormat) {
     await convertImage(inputPath, targetFormat, outputPath);
   } else if (mediaFormats.includes(inputExt) && mediaFormats.includes(targetFormat)) {
     await convertMedia(inputPath, targetFormat, outputPath);
-  } else if ((inputExt === 'pdf' && targetFormat === 'docx') || (inputExt === 'docx' && targetFormat === 'pdf')) {
+  } else if (inputExt === 'pdf' && targetFormat === 'docx') {
+    await convertWithLibreOffice(inputPath, targetFormat, outputPath);
+  } else if (['doc', 'docx'].includes(inputExt) && ['pdf', 'docx'].includes(targetFormat)) {
     await convertWithLibreOffice(inputPath, targetFormat, outputPath);
   } else if (isPandocDocFormat(inputExt, targetFormat)) {
     try {

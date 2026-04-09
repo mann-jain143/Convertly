@@ -1,12 +1,10 @@
 import { Router } from 'express';
-import { convert, download, getFormats, uploadFiles } from '../controllers/convertController.js';
-import { uploadMany } from '../middleware/uploadMiddleware.js';
+import { convert, getFormats } from '../controllers/convertController.js';
+import { upload } from '../middleware/uploadMiddleware.js';
 
 const router = Router();
 
 router.get('/formats', getFormats);
-router.post('/upload', uploadMany, uploadFiles);
-router.post('/convert', convert);
-router.get('/download/:outputId', download);
+router.post('/convert', upload.single('file'), convert);
 
 export default router;
