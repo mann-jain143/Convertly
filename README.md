@@ -19,7 +19,9 @@ Convertly is a production-ready SaaS web application for secure multi-engine fil
 .
 ├── client/                 # React + Vite + Tailwind + Framer Motion
 ├── server/                 # Express API + conversion services
-├── docker/                 # Dockerfiles + compose
+├── docker/                 # Local docker-compose setup
+├── Dockerfile              # Render production Docker image (backend)
+├── render.yaml             # Render Blueprint (API + static frontend)
 └── README.md
 ```
 
@@ -69,22 +71,77 @@ Response: streamed converted file with download headers.
 - **Sharp**: image conversions (`jpg/png/webp/tiff/avif`)
 - **FFmpeg**: media conversions (`mp4/mp3/avi/wav/...`)
 
-## Docker Deployment
+---
+
+## Deploy to Render (Docker + Static Site)
+
+### Option A (Recommended): Blueprint deploy using `render.yaml`
+
+1. Push this repository to GitHub.
+2. In Render dashboard, click **New +** → **Blueprint**.
+3. Select your Convertly GitHub repo.
+4. Render auto-detects `render.yaml` and creates:
+   - `convertly-api` (Docker web service)
+   - `convertly-web` (static site)
+5. Click **Apply**.
+6. After first deploy, open service settings and confirm environment variables:
+
+**Backend (`convertly-api`)**
+- `NODE_ENV=production`
+- `PORT=8080`
+- `MAX_FILE_SIZE_MB=100`
+- `CLIENT_URL=https://<your-frontend-domain>.onrender.com`
+
+**Frontend (`convertly-web`)**
+- `VITE_API_URL=https://<your-backend-domain>.onrender.com`
+
+7. Trigger a frontend redeploy after updating `VITE_API_URL` so built assets point to live API.
+
+### Option B: Manual Render setup
+
+#### 1) Backend service (Docker)
+- New + → **Web Service** → connect GitHub repo
+- Environment: **Docker**
+- Dockerfile path: `./Dockerfile`
+- Health check path: `/api/health`
+- Port: `8080` (service already listens to `process.env.PORT`)
+
+Set env vars:
+- `NODE_ENV=production`
+- `PORT=8080`
+- `MAX_FILE_SIZE_MB=100`
+- `CLIENT_URL=https://<frontend-domain>.onrender.com`
+
+#### 2) Frontend service (Static Site)
+- New + → **Static Site** → connect same repo
+- Root directory: `client`
+- Build command: `npm ci && npm run build`
+- Publish directory: `dist`
+
+Set env var:
+- `VITE_API_URL=https://<backend-domain>.onrender.com`
+
+Redeploy frontend after setting env var.
+
+---
+
+## End-to-End verification checklist
+
+1. Open frontend URL and upload a file.
+2. Confirm output dropdown changes based on uploaded file type.
+3. Convert and download output file.
+4. Verify backend health endpoint: `GET https://<backend>/api/health`
+5. Verify formats endpoint: `GET https://<backend>/api/formats`
+6. Check Render logs for no missing-tool warnings (`pandoc`, `soffice`, `ffmpeg`).
+
+## Docker (Local)
 
 ```bash
 cd docker
 docker compose up --build
 ```
 
-## Cloud Deployment
+## Cloud notes
 
-### Frontend (Vercel)
-- Root directory: `client`
-- Build command: `npm run build`
-- Output directory: `dist`
-- Env: `VITE_API_URL=https://<api-domain>`
-
-### Backend (Render/Railway)
-- Root directory: `server`
-- Start command: `npm start`
-- Requires binaries: `ffmpeg`, `pandoc`, `libreoffice` (or deploy via Docker)
+- Backend requires binaries: `ffmpeg`, `pandoc`, `libreoffice` (included in root Dockerfile).
+- Frontend API URL is compile-time (`VITE_API_URL`), so rebuild/redeploy after changes.
