@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: convertly-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: CLIENT_URL
+        value: https://convertly-web.onrender.com
+      - key: MAX_FILE_SIZE_MB
+        value: 100
+
+  - type: static_site
+    name: convertly-web
+    rootDir: client
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: false
+    envVars:
+      - key: VITE_API_URL
+        value: https://convertly-api.onrender.com
